@@ -48,7 +48,12 @@ async function shopifyGQL(query, variables) {
 const CUSTOMER_TAGS_ADD_GQL = `
   mutation tagsAdd($id: ID!, $tags: [String!]!) {
     tagsAdd(id: $id, tags: $tags) {
-      node { id ... on Customer { id tags(first: 25) { edges { node } } } }
+      node {
+        id
+        ... on Customer {
+          tags
+        }
+      }
       userErrors { field message }
     }
   }
@@ -57,7 +62,12 @@ const CUSTOMER_TAGS_ADD_GQL = `
 const CUSTOMER_TAGS_REMOVE_GQL = `
   mutation tagsRemove($id: ID!, $tags: [String!]!) {
     tagsRemove(id: $id, tags: $tags) {
-      node { id ... on Customer { id tags(first: 25) { edges { node } } } }
+      node {
+        id
+        ... on Customer {
+          tags
+        }
+      }
       userErrors { field message }
     }
   }
