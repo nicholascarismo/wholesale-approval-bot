@@ -296,7 +296,10 @@ app.action('approve_25', async ({ ack, body, client, logger }) => {
 
 app.action('approve_other', async ({ ack, body, client }) => {
   await ack(); // fast
-  const base = JSON.parse(body.actions?.[0]?.value || '{}'); // contains { name, customerId }
+
+  const base = JSON.parse(body.actions?.[0]?.value || '{}'); // { name, customerId }
+  const channel = body.channel?.id;
+  const thread_ts = body.message?.thread_ts || body.message?.ts;
 
   await client.views.open({
     trigger_id: body.trigger_id,
@@ -306,7 +309,8 @@ app.action('approve_other', async ({ ack, body, client }) => {
       title: { type: 'plain_text', text: 'Approve (custom %)' },
       submit: { type: 'plain_text', text: 'Apply' },
       close: { type: 'plain_text', text: 'Cancel' },
-      private_metadata: JSON.stringify(base),
+      // carry channel + thread so we can post a confirmation later
+      private_metadata: JSON.stringify({ ...base, channel_id: channel, thread_ts }),
       blocks: [
         {
           type: 'input',
@@ -323,12 +327,12 @@ app.action('approve_other', async ({ ack, body, client }) => {
   });
 });
 
-app.view('approve_other_modal', async ({ ack, view, body, client, logger }) => {
+app.view('approve_other_modal', async ({ ack, view, client, logger }) => {
   const meta = JSON.parse(view.private_metadata || '{}');
   const raw = view.state.values?.pct_block?.pct?.value?.trim() || '';
   const pct = Number(raw);
 
-  // Validate
+  // Validate input
   if (!raw || !Number.isInteger(pct) || pct < 1 || pct > 50) {
     await ack({ response_action: 'errors', errors: { pct_block: 'Please enter an integer between 1 and 50.' } });
     return;
@@ -336,16 +340,12 @@ app.view('approve_other_modal', async ({ ack, view, body, client, logger }) => {
 
   await ack(); // close modal fast
 
-  const channel = body?.view?.private_metadata ? undefined : undefined; // not used
-  const msg = body?.message; // not available here; we will refetch thread via the original message
-  // We carry the customer/name only; for posting, reply in the original thread (top-level is fine if user triggers from the thread message)
-  // Slack doesn't return the thread here; post a confirmation back to the original channel/thread using interactions payload:
-  const container = body?.container || {};
-  const thread_ts = container.thread_ts || container.message_ts;
-  const channel_id = container.channel_id;
+  const channel_id = meta.channel_id;
+  const thread_ts  = meta.thread_ts;
 
   try {
     await addCustomerTags({ numericId: meta.customerId, tags: [`wholesale${pct}`] });
+
     if (channel_id) {
       await client.chat.postMessage({
         channel: channel_id,
