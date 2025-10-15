@@ -111,20 +111,54 @@ function parseFlowbotMessage(text) {
   return { isTrigger, name, customerId };
 }
 
+// Collect visible text from text, attachments, and blocks
+function collectMessageText(event) {
+  const parts = [];
+  if (event.text) parts.push(event.text);
+
+  if (Array.isArray(event.attachments)) {
+    for (const a of event.attachments) {
+      if (a.title) parts.push(a.title);
+      if (a.text) parts.push(a.text);
+      if (Array.isArray(a.fields)) {
+        for (const f of a.fields) {
+          if (f.title) parts.push(String(f.title));
+          if (f.value) parts.push(String(f.value));
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(event.blocks)) {
+    for (const b of event.blocks) {
+      if ((b.type === 'section' || b.type === 'header') && b.text?.text) {
+        parts.push(b.text.text);
+      }
+      if (b.type === 'rich_text' && Array.isArray(b.elements)) {
+        try { parts.push(JSON.stringify(b)); } catch {}
+      }
+    }
+  }
+
+  return parts.join('\n').trim();
+}
+
 /* =========================
    Events
 ========================= */
-app.event('message', async ({ event, client, logger, say, body, context }) => {
+app.event('message', async ({ event, client, logger }) => {
   try {
     // Channel guard
     if (!WATCH_CHANNEL) return;
     if (event.channel !== WATCH_CHANNEL) return;
-    if (!event.text) return;
 
-    const { isTrigger, name, customerId } = parseFlowbotMessage(event.text);
+    // Flowbot messages are bot_message with blocks/attachments; do NOT bail on missing event.text
+    const bodyText = collectMessageText(event);
+    if (!bodyText) return;
+
+    const { isTrigger, name, customerId } = parseFlowbotMessage(bodyText);
     if (!isTrigger) return;
 
-    // Post buttons in the thread (or root if none)
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts || event.ts,
