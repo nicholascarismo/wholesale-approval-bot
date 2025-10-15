@@ -1,0 +1,17 @@
+{
+  "name": "wholesale-needs-approval",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.17.1",
+    "dotenv": "^16.4.5"
+  }
+}
