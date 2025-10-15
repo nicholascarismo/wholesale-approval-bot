@@ -350,7 +350,7 @@ app.view('approve_other_modal', async ({ ack, view, client, logger }) => {
       await client.chat.postMessage({
         channel: channel_id,
         thread_ts,
-        text: `✅ Approved *${meta.name}* at **${pct}%**. Tag \`wholesale${pct}\` added. No further action needed!`
+        text: `✅ Approved *${meta.name}* at **${pct}%**. Tag \`wholesale${pct}\` added. No further action needed.`
       });
     }
   } catch (e) {
