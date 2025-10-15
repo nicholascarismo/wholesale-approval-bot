@@ -1,8 +1,11 @@
-name: Deploy to VPS
+name: Deploy wholesale-needs-approval
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
+    paths:
+      - 'apps/wholesale-needs-approval/**'
+      - '.github/workflows/deploy.yml'
 
 jobs:
   deploy:
@@ -12,42 +15,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start ssh-agent and add key
+      - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Add droplet host key to known_hosts
+      - name: Add droplet to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p 22 ${{ secrets.DROPLET_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Create .env from ENV_FILE secret (in workspace)
-        run: |
-          printf "%s" "${{ secrets.ENV_FILE }}" > .env
-
-      - name: Ensure remote directory exists
-        run: ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" "mkdir -p '${{ secrets.REMOTE_DIR }}'"
-
-      - name: Rsync repo to droplet (keep .env)
+      - name: Rsync app to droplet
         run: |
           rsync -az --delete \
-            --exclude 'node_modules' \
-            --exclude '.git' \
-            --exclude '.github' \
-            ./  "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/"
+            --exclude=".git" \
+            --exclude="node_modules" \
+            ./apps/wholesale-needs-approval/ \
+            ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/
 
-      - name: Install deps & (re)start with PM2
-        run: >
-          ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}"
-          "bash -lc 'set -euo pipefail;
-            source ~/.profile;
-            cd \"${{ secrets.REMOTE_DIR }}\";
-            export NPM_CONFIG_FUND=false;
-            npm ci --omit=dev;
-            if pm2 describe inventory-picker >/dev/null 2>&1; then
-              pm2 reload inventory-picker --update-env;
-            else
-              pm2 start index.js --name inventory-picker;
-            fi;
-            pm2 save'"
+      - name: Write per-app .env from secret
+        run: |
+          ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} \
+          "mkdir -p ${SECRET_REMOTE_DIR:-${{ secrets.REMOTE_DIR }}/wholesale-needs-approval} && \
+           echo '${{ secrets.ENV_FILE }}' > ${SECRET_REMOTE_DIR:-${{ secrets.REMOTE_DIR }}/wholesale-needs-approval}/.env"
+
+      - name: Install & reload with PM2
+        run: |
+          ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} \
+          "set -euo pipefail; \
+           source ~/.profile; \
+           cd '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval'; \
+           npm ci; \
+           pm2 reload wholesale-needs-approval --update-env || pm2 start index.js --name wholesale-needs-approval; \
+           pm2 save"
