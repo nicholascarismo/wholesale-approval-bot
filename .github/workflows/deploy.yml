@@ -31,7 +31,7 @@ jobs:
             --exclude=".git" \
             --exclude="node_modules" \
             ./apps/wholesale-needs-approval/ \
-            ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/
+            ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval
 
       - name: Write per-app .env from secret
         run: |
