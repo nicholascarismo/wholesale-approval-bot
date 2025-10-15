@@ -1,8 +1,9 @@
-name: deploy
+name: Deploy to VPS
 
 on:
   push:
-    branches: [ main ]
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -12,53 +13,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start SSH agent
+      - name: Start ssh-agent and add key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Show repo contents (debug)
+      - name: Add droplet host key to known_hosts
         run: |
-          pwd
-          ls -al
+          mkdir -p ~/.ssh
+          ssh-keyscan -p 22 ${{ secrets.DROPLET_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Ensure remote app dir exists
+      - name: Create .env from ENV_FILE
         run: |
-          ssh -o StrictHostKeyChecking=no \
-            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
-            "mkdir -p '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval'"
+          printf "%s" "${{ secrets.ENV_FILE }}" > .env
 
-      # Trailing slash on SOURCE (./) = sync contents of repo root.
-      - name: Rsync repo to droplet
+      - name: Ensure remote directory exists
+        run: ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" "mkdir -p '${{ secrets.REMOTE_DIR }}'"
+
+      - name: Rsync repo to droplet (include .env)
         run: |
           rsync -az --delete \
-            --exclude ".git/" \
-            --exclude ".github/" \
-            --exclude "node_modules/" \
-            ./ \
-            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/"
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            --exclude '.github' \
+            ./  "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/"
 
-      - name: Write .env from ENV_FILE secret
-        env:
-          ENV_FILE: ${{ secrets.ENV_FILE }}
-        run: |
-          printf "%s" "$ENV_FILE" | ssh -o StrictHostKeyChecking=no \
-            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
-            "cat > '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/.env'"
-
-      - name: Install & reload with PM2
-        run: |
-          ssh -o StrictHostKeyChecking=no \
-            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
-            bash -lc '
-              set -e
-              source ~/.profile
-              cd "${{ secrets.REMOTE_DIR }}/wholesale-needs-approval"
-              npm ci || npm i
-              if pm2 describe wholesale-needs-approval >/dev/null 2>&1; then
-                pm2 reload wholesale-needs-approval --update-env
-              else
-                pm2 start index.js --name wholesale-needs-approval
-              fi
-              pm2 save
-            '
+      - name: Install deps & (re)start with PM2
+        run: >
+          ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}"
+          "bash -lc 'set -euo pipefail;
+            source ~/.profile || true;
+            cd \"${{ secrets.REMOTE_DIR }}\";
+            export NPM_CONFIG_FUND=false;
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev;
+            else
+              npm install --omit=dev;
+            fi;
+            if pm2 describe wholesale-needs-approval >/dev/null 2>&1; then
+              pm2 reload wholesale-needs-approval --update-env;
+            else
+              pm2 start index.js --name wholesale-needs-approval;
+            fi;
+            pm2 save'"
