@@ -24,12 +24,13 @@ jobs:
 
       - name: Ensure remote app dir exists
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} \
-            "mkdir -p ${{ secrets.REMOTE_DIR }}/wholesale-needs-approval"
+          ssh -o StrictHostKeyChecking=no \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "mkdir -p '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval'"
 
       # IMPORTANT:
       # - Trailing slash on the SOURCE (./) means "sync CONTENTS of repo root"
-      # - No trailing slash on DEST means "into this directory"
+      # - Trailing slash on DEST is fine (sync into that directory)
       - name: Rsync repo to droplet
         run: |
           rsync -az --delete \
@@ -37,27 +38,29 @@ jobs:
             --exclude ".github/" \
             --exclude "node_modules/" \
             ./ \
-            ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/"
 
       - name: Write .env from ENV_FILE secret
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} \
-            "cat > ${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/.env <<'EOF'
+          ssh -o StrictHostKeyChecking=no \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "cat > '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/.env' <<'EOF'
 ${{ secrets.ENV_FILE }}
 EOF"
 
       - name: Install & reload with PM2
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} << 'EOSSH'
-          set -e
-          source ~/.profile
-          cd ${{ secrets.REMOTE_DIR }}/wholesale-needs-approval
-          npm ci
-          # first deploy: start; subsequent deploys: reload
-          if pm2 describe wholesale-needs-approval >/dev/null 2>&1; then
-            pm2 reload wholesale-needs-approval --update-env
-          else
-            pm2 start index.js --name wholesale-needs-approval
-          fi
-          pm2 save
-          EOSSH
+          ssh -o StrictHostKeyChecking=no \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            bash -lc '
+              set -e
+              source ~/.profile
+              cd "${{ secrets.REMOTE_DIR }}/wholesale-needs-approval"
+              npm ci || npm i
+              if pm2 describe wholesale-needs-approval >/dev/null 2>&1; then
+                pm2 reload wholesale-needs-approval --update-env
+              else
+                pm2 start index.js --name wholesale-needs-approval
+              fi
+              pm2 save
+            '
