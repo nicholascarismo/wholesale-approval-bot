@@ -112,10 +112,14 @@ function parseFlowbotMessage(text) {
 }
 
 // Collect visible text from text, attachments, and blocks
+// ---- Replace / add this helper ----
 function collectMessageText(event) {
   const parts = [];
+
+  // Plain text (may be empty for bot messages)
   if (event.text) parts.push(event.text);
 
+  // Attachments (legacy)
   if (Array.isArray(event.attachments)) {
     for (const a of event.attachments) {
       if (a.title) parts.push(a.title);
@@ -129,30 +133,89 @@ function collectMessageText(event) {
     }
   }
 
+  // Blocks
   if (Array.isArray(event.blocks)) {
     for (const b of event.blocks) {
       if ((b.type === 'section' || b.type === 'header') && b.text?.text) {
         parts.push(b.text.text);
       }
+      // Section fields (Flowbot often uses these)
+      if (b.type === 'section' && Array.isArray(b.fields)) {
+        for (const fld of b.fields) {
+          if (fld?.text) parts.push(fld.text);
+        }
+      }
+      // Rich text (Flowbot sometimes posts in rich_text)
       if (b.type === 'rich_text' && Array.isArray(b.elements)) {
-        try { parts.push(JSON.stringify(b)); } catch {}
+        for (const el of b.elements) {
+          if (el.type === 'rich_text_section' && Array.isArray(el.elements)) {
+            const txt = el.elements.map(e => e.text || '').join('');
+            if (txt) parts.push(txt);
+          }
+        }
       }
     }
+  }
+
+  // Initial comment on file shares (belt & suspenders)
+  if (event.initial_comment?.comment) {
+    parts.push(event.initial_comment.comment);
   }
 
   return parts.join('\n').trim();
 }
 
+// Small utility: find label on a line, capture inline value or on next non-empty line
+function extractLabeledValue(lines, labelRegex) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const m = line.match(labelRegex);
+    if (m) {
+      // inline pattern after :
+      const after = line.split(':').slice(1).join(':').trim();
+      if (after) return after.replace(/^\*+|\*+$/g, '').trim(); // strip *bold* artifacts
+      // else take next non-empty line
+      for (let j = i + 1; j < lines.length; j++) {
+        const val = lines[j].replace(/^\*+|\*+$/g, '').trim();
+        if (val) return val;
+      }
+    }
+  }
+  return '';
+}
+
+// ---- Replace your parseFlowbotMessage with this ----
+function parseFlowbotMessage(rawText) {
+  const text = String(rawText || '').trim();
+  const lines = text.split(/\r?\n/).map(l => l.trim());
+
+  // Strict trigger line (your original copy):
+  const strictTrigger = /New wholesale signup, approve directly in this thread:/i.test(text);
+
+  // Fuzzy trigger (if Flowbot adds minor formatting)
+  const fuzzyTrigger =
+    /New\s+wholesale\s+signup/i.test(text) &&
+    (/approve.*thread/i.test(text) || /approve/i.test(text));
+
+  const isTrigger = strictTrigger || fuzzyTrigger;
+
+  // Labels may be styled: "*Name:*", "Name:", or the value on next line.
+  const name = extractLabeledValue(lines, /^\*?\s*Name\*?\s*:/i);
+  const idRaw = extractLabeledValue(lines, /^\*?\s*Customer\s*ID\*?\s*:/i);
+  const idMatch = (idRaw || text).match(/Customer\s*ID:\s*(\d+)/i) || (idRaw ? idRaw.match(/^\d+$/) : null);
+  const customerId = idMatch ? (idMatch[1] || idMatch[0]) : '';
+
+  return { isTrigger: isTrigger && !!customerId, name, customerId };
+}
+
 /* =========================
    Events
 ========================= */
-app.event('message', async ({ event, client, logger }) => {
+app.event('message', async ({ event, client }) => {
   try {
-    // Channel guard
     if (!WATCH_CHANNEL) return;
     if (event.channel !== WATCH_CHANNEL) return;
 
-    // Flowbot messages are bot_message with blocks/attachments; do NOT bail on missing event.text
     const bodyText = collectMessageText(event);
     if (!bodyText) return;
 
