@@ -73,6 +73,15 @@ const CUSTOMER_TAGS_REMOVE_GQL = `
   }
 `;
 
+const CUSTOMER_TAGS_QUERY = `
+  query customerTags($id: ID!) {
+    customer(id: $id) {
+      id
+      tags
+    }
+  }
+`;
+
 async function addCustomerTags({ numericId, tags = [] }) {
   const id = `gid://shopify/Customer/${numericId}`;
   const data = await shopifyGQL(CUSTOMER_TAGS_ADD_GQL, { id, tags });
@@ -85,6 +94,25 @@ async function removeCustomerTags({ numericId, tags = [] }) {
   const data = await shopifyGQL(CUSTOMER_TAGS_REMOVE_GQL, { id, tags });
   const errs = data?.tagsRemove?.userErrors || [];
   if (errs.length) throw new Error(`tagsRemove errors: ${JSON.stringify(errs)}`);
+}
+
+async function setExclusiveWholesaleTag({ numericId, tag }) {
+  const id = `gid://shopify/Customer/${numericId}`;
+
+  // 1) Read current tags
+  const data = await shopifyGQL(CUSTOMER_TAGS_QUERY, { id });
+  const current = data?.customer?.tags || [];
+
+  // 2) Remove any existing wholesaleNN tags except the one we want
+  const toRemove = current.filter(t => /^wholesale\d+$/.test(t) && t !== tag);
+  if (toRemove.length) {
+    await removeCustomerTags({ numericId, tags: toRemove });
+  }
+
+  // 3) Add the desired wholesaleNN tag if it's not already present
+  if (!current.includes(tag)) {
+    await addCustomerTags({ numericId, tags: [tag] });
+  }
 }
 
 /* =========================
@@ -266,7 +294,7 @@ app.action('approve_30', async ({ ack, body, client, logger }) => {
   const { name, customerId } = JSON.parse(body.actions?.[0]?.value || '{}');
 
   try {
-    await addCustomerTags({ numericId: customerId, tags: ['wholesale30'] });
+    await setExclusiveWholesaleTag({ numericId: customerId, tag: 'wholesale30' });
     await client.chat.postMessage({
       channel, thread_ts,
       text: `✅ Approved *${name}* at **30%**. Tag \`wholesale30\` added. No further action needed.`
@@ -283,7 +311,7 @@ app.action('approve_25', async ({ ack, body, client, logger }) => {
   const { name, customerId } = JSON.parse(body.actions?.[0]?.value || '{}');
 
   try {
-    await addCustomerTags({ numericId: customerId, tags: ['wholesale25'] });
+    await setExclusiveWholesaleTag({ numericId: customerId, tag: 'wholesale25' });
     await client.chat.postMessage({
       channel, thread_ts,
       text: `✅ Approved *${name}* at **25%**. Tag \`wholesale25\` added. No further action needed.`
@@ -344,7 +372,7 @@ app.view('approve_other_modal', async ({ ack, view, client, logger }) => {
   const thread_ts  = meta.thread_ts;
 
   try {
-    await addCustomerTags({ numericId: meta.customerId, tags: [`wholesale${pct}`] });
+    await setExclusiveWholesaleTag({ numericId: meta.customerId, tag: `wholesale${pct}` });
 
     if (channel_id) {
       await client.chat.postMessage({
