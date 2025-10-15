@@ -28,9 +28,7 @@ jobs:
             "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
             "mkdir -p '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval'"
 
-      # IMPORTANT:
-      # - Trailing slash on the SOURCE (./) means "sync CONTENTS of repo root"
-      # - Trailing slash on DEST is fine (sync into that directory)
+      # Trailing slash on SOURCE (./) = sync contents of repo root.
       - name: Rsync repo to droplet
         run: |
           rsync -az --delete \
@@ -41,12 +39,12 @@ jobs:
             "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/"
 
       - name: Write .env from ENV_FILE secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          printf "%s" "$ENV_FILE" | ssh -o StrictHostKeyChecking=no \
             "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
-            "cat > '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/.env' <<'EOF'
-${{ secrets.ENV_FILE }}
-EOF"
+            "cat > '${{ secrets.REMOTE_DIR }}/wholesale-needs-approval/.env'"
 
       - name: Install & reload with PM2
         run: |
