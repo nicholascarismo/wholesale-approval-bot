@@ -95,20 +95,28 @@ function buildButtons({ name, customerId }) {
   ];
 }
 
-function parseFlowbotMessage(text) {
-  // Expected format:
-  // New wholesale signup, approve directly in this thread:
-  // Name: <name>
-  // Note: <note>   (note can contain any characters, may be blank)
-  // Customer ID: <digits>
-  const nameMatch = text.match(/^\s*Name:\s*(.+)\s*$/im);
-  const idMatch   = text.match(/^\s*Customer ID:\s*(\d+)\s*$/im);
+// ---- Replace your parseFlowbotMessage with this ----
+function parseFlowbotMessage(rawText) {
+  const text = String(rawText || '').trim();
+  const lines = text.split(/\r?\n/).map(l => l.trim());
 
-  const name = nameMatch ? nameMatch[1].trim() : '';
-  const customerId = idMatch ? idMatch[1].trim() : '';
+  // Strict trigger line (your original copy):
+  const strictTrigger = /New wholesale signup, approve directly in this thread:/i.test(text);
 
-  const isTrigger = /New wholesale signup, approve directly in this thread:/i.test(text) && !!customerId;
-  return { isTrigger, name, customerId };
+  // Fuzzy trigger (if Flowbot adds minor formatting)
+  const fuzzyTrigger =
+    /New\s+wholesale\s+signup/i.test(text) &&
+    (/approve.*thread/i.test(text) || /approve/i.test(text));
+
+  const isTrigger = strictTrigger || fuzzyTrigger;
+
+  // Labels may be styled: "*Name:*", "Name:", or the value on next line.
+  const name = extractLabeledValue(lines, /^\*?\s*Name\*?\s*:/i);
+  const idRaw = extractLabeledValue(lines, /^\*?\s*Customer\s*ID\*?\s*:/i);
+  const idMatch = (idRaw || text).match(/Customer\s*ID:\s*(\d+)/i) || (idRaw ? idRaw.match(/^\d+$/) : null);
+  const customerId = idMatch ? (idMatch[1] || idMatch[0]) : '';
+
+  return { isTrigger: isTrigger && !!customerId, name, customerId };
 }
 
 // Collect visible text from text, attachments, and blocks
@@ -184,29 +192,6 @@ function extractLabeledValue(lines, labelRegex) {
   return '';
 }
 
-// ---- Replace your parseFlowbotMessage with this ----
-function parseFlowbotMessage(rawText) {
-  const text = String(rawText || '').trim();
-  const lines = text.split(/\r?\n/).map(l => l.trim());
-
-  // Strict trigger line (your original copy):
-  const strictTrigger = /New wholesale signup, approve directly in this thread:/i.test(text);
-
-  // Fuzzy trigger (if Flowbot adds minor formatting)
-  const fuzzyTrigger =
-    /New\s+wholesale\s+signup/i.test(text) &&
-    (/approve.*thread/i.test(text) || /approve/i.test(text));
-
-  const isTrigger = strictTrigger || fuzzyTrigger;
-
-  // Labels may be styled: "*Name:*", "Name:", or the value on next line.
-  const name = extractLabeledValue(lines, /^\*?\s*Name\*?\s*:/i);
-  const idRaw = extractLabeledValue(lines, /^\*?\s*Customer\s*ID\*?\s*:/i);
-  const idMatch = (idRaw || text).match(/Customer\s*ID:\s*(\d+)/i) || (idRaw ? idRaw.match(/^\d+$/) : null);
-  const customerId = idMatch ? (idMatch[1] || idMatch[0]) : '';
-
-  return { isTrigger: isTrigger && !!customerId, name, customerId };
-}
 
 /* =========================
    Events
