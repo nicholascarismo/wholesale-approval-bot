@@ -193,6 +193,22 @@ function extractLabeledValue(lines, labelRegex) {
 }
 
 
+// ===== DEBUG MIDDLEWARE (place above app.event('message')) =====
+app.use(async ({ logger, payload, body, context, next }) => {
+  try {
+    // Only log message-type events to keep noise low
+    if (body?.event?.type === 'message') {
+      const e = body.event;
+      console.log(
+        `[evt] type=message subtype=${e.subtype || '-'} ch=${e.channel} ts=${e.ts} from=${e.user || e.bot_id || '-'} text="${(e.text || '').slice(0,120)}"`
+      );
+    }
+  } catch (err) {
+    console.error('debug middleware err', err);
+  }
+  await next();
+});
+
 /* =========================
    Events
 ========================= */
@@ -206,6 +222,8 @@ app.event('message', async ({ event, client }) => {
 
     const { isTrigger, name, customerId } = parseFlowbotMessage(bodyText);
     if (!isTrigger) return;
+
+    console.log('[wholesale] trigger=%s name="%s" id="%s"', isTrigger, name, customerId);
 
     await client.chat.postMessage({
       channel: event.channel,
