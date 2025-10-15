@@ -100,21 +100,32 @@ function parseFlowbotMessage(rawText) {
   const text = String(rawText || '').trim();
   const lines = text.split(/\r?\n/).map(l => l.trim());
 
-  // Strict trigger line (your original copy):
+  // Trigger detection (strict + fuzzy)
   const strictTrigger = /New wholesale signup, approve directly in this thread:/i.test(text);
-
-  // Fuzzy trigger (if Flowbot adds minor formatting)
   const fuzzyTrigger =
     /New\s+wholesale\s+signup/i.test(text) &&
     (/approve.*thread/i.test(text) || /approve/i.test(text));
-
   const isTrigger = strictTrigger || fuzzyTrigger;
 
-  // Labels may be styled: "*Name:*", "Name:", or the value on next line.
+  // Labels may be styled; value may appear inline or on next line; may be formatted
   const name = extractLabeledValue(lines, /^\*?\s*Name\*?\s*:/i);
+
+  // Get the raw "Customer ID" value (could be `123`, *123*, etc.)
   const idRaw = extractLabeledValue(lines, /^\*?\s*Customer\s*ID\*?\s*:/i);
-  const idMatch = (idRaw || text).match(/Customer\s*ID:\s*(\d+)/i) || (idRaw ? idRaw.match(/^\d+$/) : null);
-  const customerId = idMatch ? (idMatch[1] || idMatch[0]) : '';
+
+  // Normalize: strip Slack formatting chars and pull first digit run
+  const normalize = (s) => (s || '').replace(/[`*_~<>]/g, '').trim();
+  let customerId = '';
+
+  if (idRaw) {
+    const m = normalize(idRaw).match(/\d+/);
+    if (m) customerId = m[0];
+  }
+  if (!customerId) {
+    // Fallback: scan the full text for "Customer ID: `123`" or similar
+    const m2 = text.match(/Customer\s*ID:\s*`?(\d+)`?/i);
+    if (m2) customerId = m2[1];
+  }
 
   return { isTrigger: isTrigger && !!customerId, name, customerId };
 }
