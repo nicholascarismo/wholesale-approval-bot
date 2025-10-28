@@ -124,7 +124,7 @@ function buildButtons({ name, customerId }) {
     {
       type: 'actions',
       elements: [
-        { type: 'button', text: { type: 'plain_text', text: 'Approve at 30% (default)' }, style: 'primary', action_id: 'approve_30', value: payload() },
+        { type: 'button', text: { type: 'plain_text', text: 'Approve at 20% (default)' }, style: 'primary', action_id: 'approve_20', value: payload() },
         { type: 'button', text: { type: 'plain_text', text: 'Approve at 25%' }, action_id: 'approve_25', value: payload() },
         { type: 'button', text: { type: 'plain_text', text: 'Other (choose %)' }, action_id: 'approve_other', value: payload() },
         { type: 'button', text: { type: 'plain_text', text: 'Reject' }, style: 'danger', action_id: 'reject', value: payload() }
@@ -288,20 +288,20 @@ app.event('message', async ({ event, client }) => {
 /* =========================
    Actions (fast ack + do work)
 ========================= */
-app.action('approve_30', async ({ ack, body, client, logger }) => {
+app.action('approve_20', async ({ ack, body, client, logger }) => {
   await ack(); // fast
   const { channel, thread_ts } = { channel: body.channel?.id, thread_ts: body.message?.thread_ts || body.message?.ts };
   const { name, customerId } = JSON.parse(body.actions?.[0]?.value || '{}');
 
   try {
-    await setExclusiveWholesaleTag({ numericId: customerId, tag: 'wholesale30' });
+    await setExclusiveWholesaleTag({ numericId: customerId, tag: 'wholesale20' });
     await client.chat.postMessage({
       channel, thread_ts,
-      text: `✅ Approved *${name}* at **30%**. Tag \`wholesale30\` added. No further action needed.`
+      text: `✅ Approved *${name}* at **20%**. Tag \`wholesale20\` added. No further action needed.`
     });
   } catch (e) {
-    logger.error('approve_30 failed', e);
-    await client.chat.postMessage({ channel, thread_ts, text: `❌ Failed to approve at 30%: ${e.message}` });
+    logger.error('approve_20 failed', e);
+    await client.chat.postMessage({ channel, thread_ts, text: `❌ Failed to approve at 20%: ${e.message}` });
   }
 });
 
